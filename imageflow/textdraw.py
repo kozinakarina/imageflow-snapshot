@@ -259,48 +259,47 @@ def split_text_to_lines(
     min_font_size: int = 30
 ) -> Tuple[List[str], int]:
     """
-    Разбить текст на строки, если он не помещается с минимальным размером шрифта.
+    Разбить текст на строки, если он не помещается с фиксированным размером шрифта.
+    ВСЕГДА возвращает фиксированный размер шрифта (font_size), не изменяя его.
     
     Args:
         text: Текст для разбиения
         max_width: Максимальная ширина контейнера
         font_name: Имя файла шрифта
-        font_size: Начальный размер шрифта
-        min_font_size: Минимальный размер шрифта (если меньше - переносим на новую строку)
+        font_size: Фиксированный размер шрифта (всегда используется)
+        min_font_size: Минимальный размер шрифта (используется для проверки, но не меняется)
         
     Returns:
-        Tuple[list[str], int]: (список строк, финальный размер шрифта)
+        Tuple[list[str], int]: (список строк, финальный размер шрифта - всегда равен font_size)
     """
     # Создаем временный ImageDraw для измерения
     temp_img = Image.new("RGB", (1000, 1000))
     temp_draw = ImageDraw.Draw(temp_img)
     
-    # Проверяем, помещается ли текст с минимальным размером
+    # Используем фиксированный размер шрифта
     if font_name:
-        min_font = find_font(font_name, min_font_size)
+        fixed_font = find_font(font_name, font_size)
     else:
-        min_font = ImageFont.load_default()
+        fixed_font = ImageFont.load_default()
     
     # Разбиваем текст на слова
     words = text.split()
     
-    # Проверяем, помещается ли весь текст с минимальным размером
-    full_text_width = temp_draw.textbbox((0, 0), text, font=min_font)[2] - temp_draw.textbbox((0, 0), text, font=min_font)[0]
+    # Проверяем, помещается ли весь текст с фиксированным размером
+    full_text_width = temp_draw.textbbox((0, 0), text, font=fixed_font)[2] - temp_draw.textbbox((0, 0), text, font=fixed_font)[0]
     
-    # Если помещается с минимальным размером, возвращаем как есть
+    # Если помещается, возвращаем как одну строку с фиксированным размером
     if full_text_width <= max_width:
-        # Подбираем оптимальный размер шрифта
-        optimal_size = find_fit_font_size(text, max_width, font_name, initial_size=font_size, min_size=min_font_size)
-        return [text], optimal_size
+        return [text], font_size
     
-    # Если не помещается, разбиваем на строки
+    # Если не помещается, разбиваем на строки с фиксированным размером шрифта
     lines = []
     current_line = []
     
     for word in words:
         # Проверяем ширину слова с пробелом
         test_line = ' '.join(current_line + [word]) if current_line else word
-        bbox = temp_draw.textbbox((0, 0), test_line, font=min_font)
+        bbox = temp_draw.textbbox((0, 0), test_line, font=fixed_font)
         word_width = bbox[2] - bbox[0]
         
         if word_width <= max_width:
@@ -315,7 +314,8 @@ def split_text_to_lines(
     if current_line:
         lines.append(' '.join(current_line))
     
-    return lines, min_font_size
+    # ВСЕГДА возвращаем фиксированный размер шрифта
+    return lines, font_size
 
 
 def add_centered_text(

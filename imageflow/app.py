@@ -35,6 +35,7 @@ class RenderRequest(BaseModel):
     game_title: str
     provider: str
     filename: Optional[str] = None  # Опциональное имя файла
+    concept: Optional[str] = "v1"  # Концепция обработки: "v1" (с блюром фона) или "v2" (без блюра фона)
 
 
 @app.get("/health")
@@ -76,8 +77,13 @@ def render_image(request: RenderRequest):
             detail="FAL_API_KEY не настроен в переменных окружения"
         )
     
+    # Валидация концепции
+    concept = request.concept or "v1"
+    if concept not in ("v1", "v2"):
+        raise HTTPException(status_code=400, detail="concept должен быть 'v1' или 'v2'")
+    
     try:
-        print(f"[API] Начало обработки запроса: image_url={request.image_url[:50]}...", flush=True)
+        print(f"[API] Начало обработки запроса: image_url={request.image_url[:50]}..., concept={concept}", flush=True)
         
         # Запускаем пайплайн
         pipeline_start = time.time()
@@ -86,7 +92,8 @@ def render_image(request: RenderRequest):
             game_title=request.game_title,
             provider=request.provider,
             fal_api_key=fal_api_key,
-            seed=2069714305
+            seed=2069714305,
+            concept=concept  # Передаем концепцию в пайплайн
         )
         
         if result_image is None:

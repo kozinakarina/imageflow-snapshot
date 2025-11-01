@@ -21,7 +21,8 @@ def full_pipeline(
     game_title: str,
     provider: str,
     fal_api_key: str,
-    seed: int = 2069714305
+    seed: int = 2069714305,
+    concept: str = "v1"  # Концепция обработки: "v1" (с блюром фона) или "v2" (без блюра фона)
 ) -> Image.Image:
     """
     Полный пайплайн обработки изображения по ComfyUI workflow.
@@ -32,11 +33,13 @@ def full_pipeline(
         provider: Провайдер (нижний текст)
         fal_api_key: FAL API ключ для Seedream
         seed: Фиксированный seed для Seedream
+        concept: Концепция обработки ("v1" = с блюром фона, "v2" = без блюра фона)
         
     Returns:
         Финальное обработанное изображение (PIL Image)
     """
     print("[Pipeline] Начало обработки...", flush=True)
+    print(f"[Pipeline] Концепция обработки: {concept} (v1=с блюром фона, v2=без блюра фона)", flush=True)
     start_time = time.time()
     
     # Шаг 0: Загрузка изображения (для Seedream)
@@ -127,6 +130,11 @@ def full_pipeline(
         print(traceback.format_exc(), flush=True)
         raise
     
+    # ВАЖНО: Сохраняем оригинальное изображение ДО инпейнтинга для v1
+    # Это нужно, чтобы сохранить оригинальный фон для blur
+    original_image_before_inpaint = cleaned_image.copy()
+    print(f"[Pipeline] Сохранено оригинальное изображение для blur фона (concept=v1)", flush=True)
+    
     # Шаг 3: Инверсия маски и обработка (grow + blur)
     print("[Pipeline] Шаг 3: Обработка маски...", flush=True)
     mask_start = time.time()
@@ -152,17 +160,35 @@ def full_pipeline(
     
     # ВЕТКА ФОНА: inpainted_image → masked blur → извлечение цветов → градиент → маска-переход → background_with_gradient
     
-    # Шаг 4.5: фон после инпейнта + masked blur по маске фона
-    print("[Pipeline] Шаг 4.5: Masked blur фона (processed_mask: белое=фон, flush=True)...")
-    colors_start = time.time()
-    
-    # === фон после инпейнта + masked blur по маске фона ===
-    bg_arr = np.array(inpainted_image)  # RGB, HxWx3
-    m = np.array(processed_mask).astype(np.float32) / 255.0  # 1=фон (processed_mask из grow+blur)
-    bg_blurred = cv2.GaussianBlur(bg_arr, (11, 11), 0)       # мягкий фон
-    bg_only = (bg_arr * (1 - m[..., None]) + bg_blurred * m[..., None]).astype(np.uint8)
-    bg_image = Image.fromarray(bg_only, "RGB")
-    print(f"[Pipeline] Masked blur фона применен (processed_mask: белое=фон, flush=True)")
+    # Шаг 4.5: фон после инпейнта + masked blur по маске фона (только для v1)
+    if concept == "v1":
+        print("[Pipeline] Шаг 4.5: Masked blur фона (concept=v1, processed_mask: белое=фон)...", flush=True)
+        colors_start = time.time()
+        
+        # === ПРАВИЛЬНАЯ ЛОГИКА: используем ОРИГИНАЛЬНОЕ изображение для blur фона ===
+        # Инпейнтинг закрашивает фон, поэтому мы используем оригинальное изображение ДО инпейнтинга
+        # для получения правильного размытого фона
+        bg_arr = np.array(original_image_before_inpaint)  # ОРИГИНАЛЬНОЕ изображение, не инпейнтированное!
+        m = np.array(processed_mask).astype(np.float32) / 255.0  # 1=фон (processed_mask из grow+blur)
+        
+        # Создаем размытую версию оригинального изображения
+        # Увеличенный blur: было (11, 11), стало (33, 33) - в 3 раза больше
+        bg_blurred = cv2.GaussianBlur(bg_arr, (55, 55), 0)  # сильный blur фона
+        
+        # Смешиваем: где маска фона (m=1) - используем размытое оригинальное, где персонаж (m=0) - оригинальное четкое
+        # Это сохраняет оригинальный фон, но размывает его
+        bg_only = (bg_arr * (1 - m[..., None]) + bg_blurred * m[..., None]).astype(np.uint8)
+        
+        bg_image = Image.fromarray(bg_only, "RGB")
+        print(f"[Pipeline] Masked blur фона применен (concept=v1, используется оригинальный фон)", flush=True)
+    else:
+        # v2: используем оригинальный фон БЕЗ блюра
+        print("[Pipeline] Шаг 4.5: Используем оригинальный фон без blur (concept=v2)...", flush=True)
+        colors_start = time.time()
+        # ВАЖНО: используем оригинальное изображение, не инпейнтированное!
+        # Инпейнтинг закрашивает фон, поэтому для v2 берем оригинал
+        bg_image = original_image_before_inpaint  # ОРИГИНАЛЬНОЕ изображение без blur
+        print(f"[Pipeline] Оригинальный фон используется без blur (concept=v2)", flush=True)
     
     # === извлекаем цвета ТОЛЬКО из фона ===
     print("[Pipeline] Шаг 5: Извлечение цветов строго из фона...", flush=True)
@@ -299,16 +325,17 @@ def full_pipeline(
     
     # Текст 1: game_title - многострочный с фиксированной нижней границей
     # Контейнер расширяется вверх при переносе строк
+    # ВАЖНО: font_size всегда 50px (без изменения размера)
     result_with_text = add_centered_multiline_text(
         result_for_text,
         processed_game_title,  # Используем обработанное название с пробелами
         bottom_y_position=game_bottom_y,  # Фиксированная позиция нижней строки
-        font_size=game_font_size,  # Начальный размер 50px
+        font_size=game_font_size,  # Фиксированный размер 50px
         color="#FFFFFF",
         font_name="/usr/share/fonts/truetype/inter/Inter-Bold.ttf",
         opacity=1.0,
         max_width=max_game_width,  # Ограничение контейнера
-        min_font_size=30,  # Минимальный размер шрифта (если меньше - переносим на новую строку)
+        min_font_size=game_font_size,  # Минимальный размер = фиксированный размер (50px)
         line_spacing=1.2  # Межстрочный интервал 20%
     )
     
