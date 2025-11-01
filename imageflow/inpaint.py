@@ -47,10 +47,53 @@ def inpaint_image(
     print(f"[inpaint_image] Маска: {mask_pixels}/{total_pixels} пикселей ({mask_percent:.1f}%)", flush=True)
     sys.stdout.flush()
     
-    # Если маска слишком большая, уменьшаем радиус для ускорения
+    # Если маска слишком большая, оптимизируем процесс
     if mask_percent > 50:
-        print(f"[inpaint_image] ВНИМАНИЕ: Маска очень большая ({mask_percent:.1f}%), это может занять время", flush=True)
+        print(f"[inpaint_image] ВНИМАНИЕ: Маска очень большая ({mask_percent:.1f}%), применяем оптимизации", flush=True)
         sys.stdout.flush()
+        
+        # Для очень больших масок (>90%) уменьшаем радиус и используем более быстрый подход
+        if mask_percent > 90:
+            # Для маски 100%: уменьшаем радиус и используем более быстрое заполнение
+            optimized_radius = min(inpaint_radius, 32)  # Максимум 32 вместо 64
+            print(f"[inpaint_image] Оптимизация: уменьшен радиус с {inpaint_radius} до {optimized_radius}", flush=True)
+            sys.stdout.flush()
+            inpaint_radius = optimized_radius
+            
+            # Если маска почти 100%, можно сначала уменьшить размер для скорости
+            # затем увеличить обратно (это намного быстрее)
+            if mask_percent > 95:
+                scale_factor = 0.5  # Уменьшаем до 50% размера
+                h, w = image.shape[:2]
+                small_h, small_w = int(h * scale_factor), int(w * scale_factor)
+                
+                print(f"[inpaint_image] Оптимизация: уменьшаем изображение до {small_w}x{small_h} для ускорения", flush=True)
+                sys.stdout.flush()
+                
+                # Уменьшаем изображение и маску
+                small_image = cv2.resize(image, (small_w, small_h), interpolation=cv2.INTER_LINEAR)
+                small_mask = cv2.resize(mask, (small_w, small_h), interpolation=cv2.INTER_NEAREST)
+                
+                # Инпейнтинг на уменьшенном изображении
+                small_inpainted = cv2.inpaint(small_image, small_mask, inpaint_radius, method)
+                
+                # Увеличиваем обратно
+                inpainted = cv2.resize(small_inpainted, (w, h), interpolation=cv2.INTER_LINEAR)
+                
+                print(f"[inpaint_image] Оптимизированный инпейнтинг завершен, результат увеличен до {w}x{h}", flush=True)
+                sys.stdout.flush()
+                
+                # Размытие после инпейнтинга (если указано)
+                if blur_after > 0:
+                    if blur_after % 2 == 0:
+                        blur_after += 1
+                    print(f"[inpaint_image] Применение blur после инпейнтинга: {blur_after}x{blur_after}", flush=True)
+                    sys.stdout.flush()
+                    inpainted = cv2.GaussianBlur(inpainted, (blur_after, blur_after), 0)
+                    print(f"[inpaint_image] Blur применен", flush=True)
+                    sys.stdout.flush()
+                
+                return inpainted
     
     print(f"[inpaint_image] Запуск cv2.inpaint с методом {method}, radius={inpaint_radius}...", flush=True)
     sys.stdout.flush()
@@ -58,6 +101,16 @@ def inpaint_image(
     # Инпейнтинг
     import time
     inpaint_start = time.time()
+    
+    # Дополнительная проверка: если маска все еще очень большая, но не 100%
+    # уменьшаем радиус для ускорения
+    if mask_percent > 80 and mask_percent <= 95:
+        optimized_radius = min(inpaint_radius, 32)
+        if optimized_radius < inpaint_radius:
+            print(f"[inpaint_image] Оптимизация: уменьшен радиус с {inpaint_radius} до {optimized_radius} для ускорения", flush=True)
+            sys.stdout.flush()
+            inpaint_radius = optimized_radius
+    
     inpainted = cv2.inpaint(image, mask, inpaint_radius, method)
     inpaint_time = time.time() - inpaint_start
     

@@ -1,7 +1,7 @@
 """Добавление текстовых оверлеев."""
 import os
 from PIL import Image, ImageDraw, ImageFont
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 
 def find_font(font_name: str, fallback_size: int = 100) -> ImageFont.FreeTypeFont:
@@ -148,6 +148,174 @@ def find_fit_font_size(
             high = mid - 1
     
     return best_size
+
+
+def add_centered_multiline_text(
+    image: Image.Image,
+    text: str,
+    bottom_y_position: int,  # Позиция нижней строки (центр строки)
+    font_size: int = 48,
+    color: str = "#FFFFFF",
+    font_name: Optional[str] = None,
+    opacity: float = 1.0,
+    max_width: Optional[int] = None,
+    min_font_size: int = 30,
+    line_spacing: float = 1.2
+) -> Image.Image:
+    """
+    Добавить центрированный многострочный текст с фиксированной нижней границей.
+    
+    Args:
+        image: PIL Image для добавления текста
+        text: Текст для добавления
+        bottom_y_position: Y координата нижней строки (центр строки) - фиксированная позиция
+        font_size: Начальный размер шрифта
+        color: Цвет текста в hex формате
+        font_name: Имя файла шрифта
+        opacity: Прозрачность текста (0.0 - 1.0)
+        max_width: Максимальная ширина контейнера
+        min_font_size: Минимальный размер шрифта (если меньше - переносим на новую строку)
+        line_spacing: Множитель для межстрочного интервала (1.2 = 20% от высоты строки)
+        
+    Returns:
+        PIL Image с добавленным текстом
+    """
+    # Определяем максимальную ширину для контейнера
+    if max_width is None:
+        container_width = image.width
+    else:
+        container_width = max_width
+    
+    # Разбиваем текст на строки
+    lines, final_font_size = split_text_to_lines(text, container_width, font_name, font_size, min_font_size)
+    
+    # Создаем копию изображения
+    result = image.copy()
+    
+    # Конвертируем в RGBA для работы с прозрачностью
+    if result.mode != "RGBA":
+        result = result.convert("RGBA")
+    
+    # Создаём отдельный слой для текста
+    text_layer = Image.new("RGBA", result.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(text_layer)
+    
+    # Загружаем шрифт
+    if font_name:
+        font = find_font(font_name, final_font_size)
+    else:
+        font = ImageFont.load_default()
+    
+    # Вычисляем высоты всех строк
+    line_heights = []
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        line_heights.append(bbox[3] - bbox[1])
+    
+    # Вычисляем позиции строк снизу вверх
+    # bottom_y_position - это центр нижней строки
+    x_position = image.width // 2  # Центр изображения
+    
+    # Конвертируем цвет в RGBA с учётом opacity
+    rgb = tuple(int(color[i:i+2], 16) for i in (1, 3, 5))
+    rgba = (*rgb, int(255 * opacity))
+    
+    # Рисуем строки снизу вверх, начиная с нижней строки
+    current_y = bottom_y_position  # Центр нижней строки
+    
+    for i in range(len(lines) - 1, -1, -1):  # Идем от последней строки к первой
+        line = lines[i]
+        line_height = line_heights[i]
+        
+        # Центрируем строку по Y относительно её высоты
+        line_y = current_y - line_height // 2
+        
+        draw.text(
+            (x_position, line_y),
+            line,
+            font=font,
+            fill=rgba,
+            anchor="mm"  # middle-middle: текст центрирован по X и Y
+        )
+        
+        # Переходим к следующей строке выше (если есть)
+        if i > 0:
+            # Поднимаемся на высоту текущей строки + межстрочный интервал
+            spacing = int(line_height * (line_spacing - 1.0))
+            current_y = current_y - line_height - spacing
+    
+    # Композит текстового слоя на изображение
+    result = Image.alpha_composite(result, text_layer)
+    
+    # Конвертируем обратно в RGB
+    return result.convert("RGB")
+
+
+def split_text_to_lines(
+    text: str,
+    max_width: int,
+    font_name: Optional[str],
+    font_size: int,
+    min_font_size: int = 30
+) -> Tuple[List[str], int]:
+    """
+    Разбить текст на строки, если он не помещается с минимальным размером шрифта.
+    
+    Args:
+        text: Текст для разбиения
+        max_width: Максимальная ширина контейнера
+        font_name: Имя файла шрифта
+        font_size: Начальный размер шрифта
+        min_font_size: Минимальный размер шрифта (если меньше - переносим на новую строку)
+        
+    Returns:
+        Tuple[list[str], int]: (список строк, финальный размер шрифта)
+    """
+    # Создаем временный ImageDraw для измерения
+    temp_img = Image.new("RGB", (1000, 1000))
+    temp_draw = ImageDraw.Draw(temp_img)
+    
+    # Проверяем, помещается ли текст с минимальным размером
+    if font_name:
+        min_font = find_font(font_name, min_font_size)
+    else:
+        min_font = ImageFont.load_default()
+    
+    # Разбиваем текст на слова
+    words = text.split()
+    
+    # Проверяем, помещается ли весь текст с минимальным размером
+    full_text_width = temp_draw.textbbox((0, 0), text, font=min_font)[2] - temp_draw.textbbox((0, 0), text, font=min_font)[0]
+    
+    # Если помещается с минимальным размером, возвращаем как есть
+    if full_text_width <= max_width:
+        # Подбираем оптимальный размер шрифта
+        optimal_size = find_fit_font_size(text, max_width, font_name, initial_size=font_size, min_size=min_font_size)
+        return [text], optimal_size
+    
+    # Если не помещается, разбиваем на строки
+    lines = []
+    current_line = []
+    
+    for word in words:
+        # Проверяем ширину слова с пробелом
+        test_line = ' '.join(current_line + [word]) if current_line else word
+        bbox = temp_draw.textbbox((0, 0), test_line, font=min_font)
+        word_width = bbox[2] - bbox[0]
+        
+        if word_width <= max_width:
+            current_line.append(word)
+        else:
+            # Сохраняем текущую строку и начинаем новую
+            if current_line:
+                lines.append(' '.join(current_line))
+            current_line = [word]
+    
+    # Добавляем последнюю строку
+    if current_line:
+        lines.append(' '.join(current_line))
+    
+    return lines, min_font_size
 
 
 def add_centered_text(

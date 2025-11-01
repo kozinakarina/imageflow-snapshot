@@ -2,6 +2,7 @@
 import os
 import io
 import re
+import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -49,6 +50,24 @@ def render_image(request: RenderRequest):
     
     Возвращает PNG изображение как бинарные данные.
     """
+    import time
+    import sys
+    import traceback
+    
+    # Валидация входных данных
+    if not request.image_url or not request.image_url.strip():
+        raise HTTPException(status_code=400, detail="image_url не может быть пустым")
+    
+    if not request.game_title or not request.game_title.strip():
+        raise HTTPException(status_code=400, detail="game_title не может быть пустым")
+    
+    if not request.provider or not request.provider.strip():
+        raise HTTPException(status_code=400, detail="provider не может быть пустым")
+    
+    # Валидация URL
+    if not request.image_url.startswith(('http://', 'https://')):
+        raise HTTPException(status_code=400, detail="image_url должен быть валидным HTTP/HTTPS URL")
+    
     # Получаем API ключ из переменных окружения
     fal_api_key = os.getenv("FAL_API_KEY")
     if not fal_api_key:
@@ -58,9 +77,6 @@ def render_image(request: RenderRequest):
         )
     
     try:
-        import time
-        import sys
-        
         print(f"[API] Начало обработки запроса: image_url={request.image_url[:50]}...", flush=True)
         
         # Запускаем пайплайн
@@ -72,11 +88,23 @@ def render_image(request: RenderRequest):
             fal_api_key=fal_api_key,
             seed=2069714305
         )
+        
+        if result_image is None:
+            raise RuntimeError("Пайплайн вернул None вместо изображения")
+        
         print(f"[API] Пайплайн завершен за {time.time() - pipeline_start:.2f}с, размер изображения: {result_image.size}", flush=True)
         
         # Конвертируем в PNG байты
         convert_start = time.time()
-        png_bytes = pil_to_bytes(result_image, format="PNG")
+        try:
+            png_bytes = pil_to_bytes(result_image, format="PNG")
+        except Exception as e:
+            print(f"[API] Ошибка конвертации в PNG: {type(e).__name__}: {e}", flush=True)
+            raise RuntimeError(f"Ошибка конвертации изображения в PNG: {e}") from e
+        
+        if not png_bytes or len(png_bytes) == 0:
+            raise RuntimeError("Конвертация в PNG вернула пустой результат")
+        
         print(f"[API] Конвертация в PNG завершена за {time.time() - convert_start:.2f}с, размер: {len(png_bytes)} байт", flush=True)
         sys.stdout.flush()
         
@@ -112,11 +140,32 @@ def render_image(request: RenderRequest):
         
         return response
     
+    except HTTPException:
+        # Пробрасываем HTTPException как есть
+        raise
+    
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Ошибка сетевого запроса: {type(e).__name__}: {str(e)}"
+        print(f"[API] {error_msg}", flush=True)
+        print(traceback.format_exc(), flush=True)
+        raise HTTPException(status_code=503, detail=error_msg)
+    
+    except ValueError as e:
+        error_msg = f"Ошибка валидации данных: {str(e)}"
+        print(f"[API] {error_msg}", flush=True)
+        raise HTTPException(status_code=400, detail=error_msg)
+    
+    except RuntimeError as e:
+        error_msg = f"Ошибка выполнения пайплайна: {str(e)}"
+        print(f"[API] {error_msg}", flush=True)
+        print(traceback.format_exc(), flush=True)
+        raise HTTPException(status_code=500, detail=error_msg)
+    
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Ошибка обработки изображения: {str(e)}"
-        )
+        error_msg = f"Неожиданная ошибка обработки изображения: {type(e).__name__}: {str(e)}"
+        print(f"[API] {error_msg}", flush=True)
+        print(traceback.format_exc(), flush=True)
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 if __name__ == "__main__":

@@ -33,16 +33,17 @@ def fetch_image(url: str) -> Image.Image:
     """Скачать изображение по URL и вернуть PIL Image."""
     import requests
     import sys
+    from .retry_utils import safe_request
     
     print(f"[fetch_image] Начало загрузки: {url[:80]}...", flush=True)
     sys.stdout.flush()
     
     try:
-        response = requests.get(url, timeout=30)  # Уменьшен timeout для быстрого обнаружения ошибок
+        # Используем безопасный запрос с retry
+        response = safe_request("GET", url, max_retries=3, timeout=30)
+        
         print(f"[fetch_image] HTTP статус: {response.status_code}", flush=True)
         sys.stdout.flush()
-        
-        response.raise_for_status()
         
         print(f"[fetch_image] Изображение загружено, размер: {len(response.content)} байт", flush=True)
         sys.stdout.flush()
