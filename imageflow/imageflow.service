@@ -1,0 +1,25 @@
+[Unit]
+Description=ImageFlow API Service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/var/www/cardforge.cloud
+ExecStart=/usr/bin/python3 /var/www/cardforge.cloud/imageflow/run.py
+Restart=always
+RestartSec=10
+Environment="PATH=/usr/bin:/usr/local/bin:/home/ubuntu/.local/bin"
+EnvironmentFile=/var/www/cardforge.cloud/imageflow/.env
+
+# Логирование
+StandardOutput=append:/var/www/cardforge.cloud/imageflow/imageflow.log
+StandardError=append:/var/www/cardforge.cloud/imageflow/imageflow.log
+
+# Безопасность
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+
