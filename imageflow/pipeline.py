@@ -12,8 +12,9 @@ from .colors import extract_main_colors, colors_to_hex
 from .colors_simple import extract_corner_colors
 from .gradient import create_gradient_background
 from .compose import composite_images
-from .textdraw import add_watermark, add_centered_text, add_centered_multiline_text
-from .utils import split_game_title
+# Текст убран по запросу
+# from .textdraw import add_watermark, add_centered_text, add_centered_multiline_text
+# from .utils import split_game_title
 
 
 def full_pipeline(
@@ -283,73 +284,14 @@ def full_pipeline(
     
     result = result_with_gradient
     
-    # Шаг 12: Resize до 512x640 (КАК В JSON - ДО текстов!)
+    # Шаг 12: Resize до 512x640
     print("[Pipeline] Шаг 12: Resize до 512x640...", flush=True)
     resize_start = time.time()
     result_resized = result.resize((512, 640), Image.Resampling.LANCZOS)
     print(f"[Pipeline] Resize завершен за {time.time() - resize_start:.2f}с, размер: {result_resized.size}")
     
-    # Шаг 13: Добавление текстов с правильными отступами
-    print("[Pipeline] Шаг 13: Добавление текстов...", flush=True)
-    text_start = time.time()
-    # Конвертируем для добавления текста
-    result_for_text = result_resized.convert("RGB")
-    
-    # Получаем размеры для расчета позиций
-    img_width, img_height = result_for_text.size  # 512 x 640
-    
-    # Фиксированные размеры шрифтов
-    game_font_size = 50   # Размер текста игры
-    provider_font_size = 18  # Размер текста провайдера
-    
-    # Вычисляем высоты текстов для правильного позиционирования
-    # Примерные высоты текстов (приблизительно 1.2x от размера шрифта)
-    game_text_height = int(game_font_size * 1.2)
-    provider_text_height = int(provider_font_size * 1.2)
-    
-    # Позиционирование: фиксированные расстояния
-    # Провайдер: центр текста на 50px от низа (фиксированно)
-    provider_y = img_height - 50  # 50px от низа (центр текста провайдера)
-    
-    # Игра: расстояние между игрой и провайдером - 34px (фиксированно)
-    # bottom_y_position игры - это центр нижней строки названия игры
-    game_bottom_y = provider_y - 34  # 34px расстояние между центрами (игра снизу - провайдер сверху)
-    
-    # Контейнер игры: ограничен 100px от краев изображения
-    # Ширина контейнера = img_width - 200 (100px с каждой стороны)
-    max_game_width = img_width - 200  # 100px отступы слева и справа
-    
-    # Обрабатываем название игры: добавляем пробелы для читаемости
-    processed_game_title = split_game_title(game_title)
-    print(f"[Pipeline] Название игры обработано: '{game_title}' -> '{processed_game_title}'", flush=True)
-    
-    # Текст 1: game_title - многострочный с фиксированной нижней границей
-    # Контейнер расширяется вверх при переносе строк
-    # ВАЖНО: font_size всегда 50px (без изменения размера)
-    result_with_text = add_centered_multiline_text(
-        result_for_text,
-        processed_game_title,  # Используем обработанное название с пробелами
-        bottom_y_position=game_bottom_y,  # Фиксированная позиция нижней строки
-        font_size=game_font_size,  # Фиксированный размер 50px
-        color="#FFFFFF",
-        font_name="/usr/share/fonts/truetype/inter/Inter-Bold.ttf",
-        opacity=1.0,
-        max_width=max_game_width,  # Ограничение контейнера
-        min_font_size=game_font_size,  # Минимальный размер = фиксированный размер (50px)
-        line_spacing=1.2  # Межстрочный интервал 20%
-    )
-    
-    # Текст 2: provider - 18px, обычный шрифт Inter Regular, центрирован по X, ниже первого текста
-    result = add_centered_text(
-        result_with_text,
-        provider,
-        y_position=provider_y,
-        font_size=provider_font_size,
-        color="#FFFFFF",
-        font_name="/usr/share/fonts/truetype/inter/Inter-Regular.ttf",
-        opacity=1.0
-    )
-    print(f"[Pipeline] Тексты добавлены: игра (нижняя строка Y={game_bottom_y}), провайдер Y={provider_y}, за {time.time() - text_start:.2f}с", flush=True)
+    # Текст убран по запросу - возвращаем изображение без текста
+    result = result_resized
     
     total_time = time.time() - start_time
     print(f"[Pipeline] Обработка завершена за {total_time:.2f}с", flush=True)

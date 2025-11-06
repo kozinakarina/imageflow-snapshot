@@ -74,14 +74,21 @@ def split_game_title(title: str) -> str:
     - "VIP" -> "VIP" (не разбивается)
     - "3DSlots" -> "3D Slots"
     - "ABC123Test" -> "ABC 123 Test"
+    - "MGS_RedRake_getTheCoins" -> "MGS RedRake getTheCoins" (подчеркивание заменяется на пробел)
+    - "MGSRedRakegetTheCoinsRedrake" -> "MGS RedRake get The Coins Redrake"
     
     Правила:
-    1. Пробел между буквой и цифрой (Test123 -> Test 123)
-    2. Пробел между цифрой и буквой (15D -> 15 D, но 3D -> 3D как отдельное слово)
-    3. Пробел между строчной и заглавной буквой (tB -> t B)
-    4. Пробел между последовательностью заглавных и следующей заглавной с строчными (VIPAuto -> VIP Auto)
+    1. Подчеркивание заменяется на пробел (_ -> пробел)
+    2. Пробел между буквой и цифрой (Test123 -> Test 123)
+    3. Пробел между цифрой и буквой (15D -> 15 D, но 3D -> 3D как отдельное слово)
+    4. Пробел между строчной и заглавной буквой (tB -> t B, getThe -> get The)
+    5. Пробел между последовательностью заглавных (2+) и следующей заглавной с строчными (VIPAuto -> VIP Auto)
+    6. Пробел между заглавной с строчными и следующей заглавной (RedRakeget -> RedRake get)
     """
     import re
+    
+    # 0. Заменяем подчеркивания на пробелы (_ -> пробел)
+    title = title.replace('_', ' ')
     
     # 1. Пробел между буквой и цифрой (Test123 -> Test 123)
     title = re.sub(r'([A-Za-z])(\d)', r'\1 \2', title)
@@ -90,12 +97,16 @@ def split_game_title(title: str) -> str:
     # Но сохраняем паттерны типа "3D" как одно слово, если следующая буква заглавная
     title = re.sub(r'(\d)([A-Za-z])', r'\1 \2', title)
     
-    # 3. Пробел между строчной и заглавной буквой (HotBonus -> Hot Bonus)
+    # 3. Пробел между строчной и заглавной буквой (HotBonus -> Hot Bonus, getThe -> get The)
     title = re.sub(r'([a-z])([A-Z])', r'\1 \2', title)
     
     # 4. Пробел между последовательностью заглавных (2+) и следующей заглавной с строчными
     # (VIPAuto -> VIP Auto, но VIP -> VIP)
     title = re.sub(r'([A-Z]{2,})([A-Z][a-z])', r'\1 \2', title)
+    
+    # 5. Пробел между заглавной+строчными и следующей заглавной (RedRakeget -> RedRake get)
+    # Это обрабатывает случаи типа "RedRakegetTheCoins" -> "RedRake get The Coins"
+    title = re.sub(r'([A-Z][a-z]+)([A-Z])', r'\1 \2', title)
     
     # Удаляем лишние пробелы
     title = re.sub(r'\s+', ' ', title).strip()
