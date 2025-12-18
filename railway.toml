@@ -6,3 +6,7 @@ startCommand = "python main.py"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
+# Увеличенный таймаут для долгих запросов
+[deploy.healthcheck]
+disabled = true
+
