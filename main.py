@@ -6,14 +6,17 @@ import sys
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from pydantic import BaseModel
+from typing import Optional
 
-# Создаём минимальное приложение для проверки
-minimal_app = FastAPI(title="ImageFlow API")
+# Создаём приложение
+app = FastAPI(title="ImageFlow API")
 
 # Добавляем CORS
-minimal_app.add_middleware(
+app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
@@ -21,21 +24,74 @@ minimal_app.add_middleware(
     allow_headers=["*"],
 )
 
-@minimal_app.get("/health")
+class RenderRequest(BaseModel):
+    image_url: str
+    game_title: str
+    provider: str
+    filename: Optional[str] = None
+    concept: Optional[str] = "v1"
+
+@app.get("/health")
 def health():
     return {"status": "ok"}
 
-@minimal_app.get("/")
+@app.get("/")
 def root():
     return {"message": "ImageFlow API is running"}
 
-# Пытаемся импортировать полное приложение
+# Пытаемся импортировать полный пайплайн
+full_pipeline = None
+pil_to_bytes = None
+import_error = None
+
 try:
-    from imageflow.app import app
-    print("✅ Full app imported successfully", file=sys.stderr)
+    from imageflow.pipeline import full_pipeline as fp
+    from imageflow.utils import pil_to_bytes as ptb
+    full_pipeline = fp
+    pil_to_bytes = ptb
+    print("✅ Full pipeline imported successfully", file=sys.stderr)
 except Exception as e:
-    print(f"⚠️ Using minimal app due to import error: {e}", file=sys.stderr)
-    app = minimal_app
+    import_error = str(e)
+    print(f"⚠️ Pipeline import error: {e}", file=sys.stderr)
+
+@app.post("/render")
+def render_image(request: RenderRequest):
+    """Обработать изображение."""
+    if full_pipeline is None:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Pipeline not available. Import error: {import_error}"
+        )
+    
+    fal_api_key = os.getenv("FAL_API_KEY")
+    if not fal_api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="FAL_API_KEY not configured"
+        )
+    
+    try:
+        result_image = full_pipeline(
+            image_url=request.image_url,
+            game_title=request.game_title,
+            provider=request.provider,
+            fal_api_key=fal_api_key,
+            seed=2069714305,
+            concept=request.concept or "v1"
+        )
+        
+        png_bytes = pil_to_bytes(result_image, format="PNG")
+        
+        return Response(
+            content=png_bytes,
+            media_type="image/png",
+            headers={
+                "Content-Disposition": f'attachment; filename="result.png"',
+            }
+        )
+    except Exception as e:
+        print(f"❌ Render error: {e}", file=sys.stderr)
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
