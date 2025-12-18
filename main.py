@@ -1,17 +1,18 @@
-"""ImageFlow API for Railway."""
+"""ImageFlow API for Railway - Simplified test."""
 import os
 import sys
+import io
+import requests
 
-# Добавляем пути
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
-sys.path.insert(0, os.path.join(current_dir, 'imageflow'))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import Optional
+from PIL import Image
 
 app = FastAPI(title="ImageFlow API")
 
@@ -30,64 +31,38 @@ class RenderRequest(BaseModel):
     filename: Optional[str] = None
     concept: Optional[str] = "v1"
 
-# Попытка импорта пайплайна
-pipeline_available = False
-pipeline_error = None
-
-try:
-    from imageflow.pipeline import full_pipeline
-    from imageflow.utils import pil_to_bytes
-    pipeline_available = True
-    print("✅ Full pipeline loaded", file=sys.stderr)
-except Exception as e:
-    pipeline_error = str(e)
-    print(f"⚠️ Pipeline not available: {e}", file=sys.stderr)
-
 @app.get("/health")
 def health():
-    return {
-        "status": "ok",
-        "pipeline": pipeline_available,
-        "error": pipeline_error
-    }
+    return {"status": "ok", "version": "simple-test"}
 
 @app.get("/")
 def root():
-    return {
-        "message": "ImageFlow API",
-        "pipeline_available": pipeline_available,
-        "pipeline_error": pipeline_error
-    }
+    return {"message": "ImageFlow API - Simple Test Mode"}
 
 @app.post("/render")
 def render_image(request: RenderRequest):
-    """Обработать изображение."""
-    
-    if not pipeline_available:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Pipeline not available: {pipeline_error}"
-        )
-    
-    fal_api_key = os.getenv("FAL_API_KEY")
-    if not fal_api_key:
-        raise HTTPException(status_code=500, detail="FAL_API_KEY not configured")
-    
+    """Простой тест - загружает изображение и возвращает его."""
     try:
-        print(f"Processing: {request.game_title} / {request.provider}", file=sys.stderr)
+        print(f"Downloading: {request.image_url}", file=sys.stderr)
         
-        result_image = full_pipeline(
-            image_url=request.image_url,
-            game_title=request.game_title,
-            provider=request.provider,
-            fal_api_key=fal_api_key,
-            seed=2069714305,
-            concept=request.concept or "v1"
-        )
+        # Скачиваем изображение
+        response = requests.get(request.image_url, timeout=30)
+        response.raise_for_status()
         
-        png_bytes = pil_to_bytes(result_image, format="PNG")
+        # Открываем как PIL Image
+        img = Image.open(io.BytesIO(response.content))
+        print(f"Image loaded: {img.size} {img.mode}", file=sys.stderr)
         
-        print(f"Done: {len(png_bytes)} bytes", file=sys.stderr)
+        # Конвертируем в PNG
+        output = io.BytesIO()
+        if img.mode in ('RGBA', 'LA', 'P'):
+            img = img.convert('RGBA')
+        else:
+            img = img.convert('RGB')
+        img.save(output, format='PNG')
+        png_bytes = output.getvalue()
+        
+        print(f"Returning: {len(png_bytes)} bytes", file=sys.stderr)
         
         return Response(
             content=png_bytes,
@@ -95,6 +70,9 @@ def render_image(request: RenderRequest):
             headers={"Content-Disposition": 'attachment; filename="result.png"'}
         )
         
+    except requests.RequestException as e:
+        print(f"Download error: {e}", file=sys.stderr)
+        raise HTTPException(status_code=400, detail=f"Failed to download image: {e}")
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         raise HTTPException(status_code=500, detail=str(e))
