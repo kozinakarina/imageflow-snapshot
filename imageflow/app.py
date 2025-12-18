@@ -5,6 +5,7 @@ import re
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
@@ -15,6 +16,15 @@ from .utils import pil_to_bytes
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 app = FastAPI(title="ImageFlow API", description="ComfyUI workflow as API service")
+
+# Добавляем CORS для доступа из браузера
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def sanitize_filename(text: str) -> str:

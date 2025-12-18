@@ -7,9 +7,19 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 # Создаём минимальное приложение для проверки
 minimal_app = FastAPI(title="ImageFlow API")
+
+# Добавляем CORS
+minimal_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @minimal_app.get("/health")
 def health():
